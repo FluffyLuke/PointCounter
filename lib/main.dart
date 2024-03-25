@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:popover/popover.dart';
 
@@ -49,15 +51,18 @@ class _MyHomePageState extends State<PointCounter> {
   List<GroupPage> _groups = List.empty(growable: true);
   GroupPage? _currentGroup;
 
-  void _incrementCounter() {
-    setState(() {});
+  final _playerNumberInputController = TextEditingController();
+
+  @override
+  void dispose() {
+    // Clean up the controller when the widget is disposed.
+    _playerNumberInputController.dispose();
+    super.dispose();
   }
 
+
   void _createNextGroup() {
-    showPopover(
-      context: context,
-      bodyBuilder: 
-      );
+    //int playerCount = int.parse(_playerNumberInputController.text);
 
     var group = GroupPage(groupNumber: _nextPage);
     _groups.add(group);
@@ -83,14 +88,14 @@ class _MyHomePageState extends State<PointCounter> {
               Container(
                 margin: EdgeInsets.only(left: 20, right: 10),
                 child: FloatingActionButton(
-                  onPressed: _incrementCounter,
+                  onPressed: () => {}, // TODO end this
                   child: const Icon(Icons.arrow_left),
                 ),
               ),
               Container(
                 margin: EdgeInsets.only(left: 10, right: 50),
                 child: FloatingActionButton(
-                  onPressed: _incrementCounter,
+                  onPressed: () => {}, // TODO end this
                   child: const Icon(Icons.arrow_right),
                 ),
               ),
@@ -104,7 +109,18 @@ class _MyHomePageState extends State<PointCounter> {
                     color: Color.fromRGBO(255, 255, 255, 1),
                   ),
                 ),
-              )
+              ),
+              // SizedBox(
+              //   width: 300,
+              //   child: TextField(
+              //       controller: _playerNumberInputController,
+              //       decoration: InputDecoration(labelText: "Liczba zawodników"),
+              //       keyboardType: TextInputType.number,
+              //       inputFormatters: <TextInputFormatter>[
+              //         FilteringTextInputFormatter.digitsOnly
+              //       ], // Only numbers can be entered
+              //     ),
+              //   )
             ],
           )),
     );
@@ -112,25 +128,76 @@ class _MyHomePageState extends State<PointCounter> {
 }
 
 class GroupPage extends StatefulWidget {
-  const GroupPage({super.key, required this.groupNumber, required this.players});
+  const GroupPage({super.key, required this.groupNumber});
 
   final int groupNumber;
-  final List<Player> players;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
 
 class _GroupPageState extends State<GroupPage> {
+  List<Player> players = List.empty();
+  var nameController = TextEditingController();
+  var lastNameController = TextEditingController();
+
+  void _addPlayer() {
+    var name = nameController.text;
+    var lname = lastNameController.text;
+    var newPlayer = Player(name: name, lastName: lname);
+    players.add(newPlayer);
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.primary,
-      appBar: AppBar(
-        toolbarHeight: 120,
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        leading: Column(),
-      ),
-      body: Text("Group: ${widget.groupNumber}"),
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.start,
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            SizedBox(
+              width: 300,
+              child: TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  border: UnderlineInputBorder(),
+                  labelText: 'Podaj nazwisko',
+                )
+              ),
+            ),
+            SizedBox(
+              width: 300,
+              child: TextFormField(
+                controller: lastNameController,
+                decoration: const InputDecoration(
+                  border: UnderlineInputBorder(),
+                  labelText: 'Podaj nazwisko',
+                )
+              ),
+            ),
+            FloatingActionButton(
+              onPressed: _addPlayer,
+              child: Icon(Icons.add),
+            ),
+          ],
+        ),
+        ListView.builder(
+          // Let the ListView know how many items it needs to build.
+          itemCount: players.length,
+          // Provide a builder function. This is where the magic happens.
+          // Convert each item into a widget based on the type of item it is.
+          itemBuilder: (context, index) {
+            final p = players[index];
+
+            return ListTile(
+              leading: Text("Gracz: ${p.name} ${p.lastName}")
+            );
+          },
+        ),
+      ],
     );
   }
 }
