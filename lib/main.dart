@@ -45,13 +45,14 @@ class PointCounter extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<PointCounter> {
-  int _currentPage = 1;
-  int _numberOfPages = 1;
-  int _nextPage = 1;
+  int _nextGroup = 1;
+  List<Table> _tables = List.empty(growable: true);
   List<GroupPage> _groups = List.empty(growable: true);
+  List<Player> _players = List.empty(growable: true);
   GroupPage? _currentGroup;
 
   final _playerNumberInputController = TextEditingController();
+  final _tableCountController = TextEditingController();
 
   @override
   void dispose() {
@@ -60,17 +61,59 @@ class _MyHomePageState extends State<PointCounter> {
     super.dispose();
   }
 
+  _createNextGroup() async {
+    if (_tables.isEmpty) {
+      _showTableAlert();
+    }
 
-  void _createNextGroup() {
-    //int playerCount = int.parse(_playerNumberInputController.text);
-
-    var group = GroupPage(groupNumber: _nextPage);
+    var group = GroupPage(
+      groupNumber: _nextGroup,
+      players: _players,
+    );
     _groups.add(group);
     _currentGroup = group;
-    print("Created new group number $_nextPage");
+    print("Created new group number $_nextGroup");
     print("Number of groups: ${_groups.length}");
-    _nextPage++;
+    _nextGroup++;
     setState(() {});
+  }
+
+  void _changeGroup(int jump) {
+    print("Changing group!");
+    print("Current + jump -> ${_currentGroup?.groupNumber} + ($jump)");
+    var calculatedGroup = (_currentGroup!.groupNumber + jump);
+    print("Calculated group: $calculatedGroup");
+    if (calculatedGroup < 1) {
+      _currentGroup = _groups[0];
+      return;
+    }
+    if (calculatedGroup > _groups.length) {
+      _currentGroup = _groups[_groups.length - 1];
+      return;
+    }
+    _currentGroup = _groups[calculatedGroup - 1];
+    setState(() {});
+  }
+
+  Future _showTableAlert() => showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+            title: Text("Ile jest stołów do gry?"),
+            content: TextField(controller: _tableCountController, decoration: const InputDecoration(hintText: "Liczba stołów")),
+            actions: [
+              TextButton(
+                  onPressed: () => {
+                        if (int.tryParse(_tableCountController.text) != null) {_generateTables(), Navigator.of(context).pop()}
+                      },
+                  child: Text("Ok"))
+            ],
+          ));
+  void _generateTables() {
+    var numberOfTables = _tableCountController.text;
+    for (int i = 0; i <= int.parse(numberOfTables); i++) {
+      _tables.add(Table(tableNumber: i));
+    }
+    print("Generated $numberOfTables tables");
   }
 
   @override
@@ -88,14 +131,14 @@ class _MyHomePageState extends State<PointCounter> {
               Container(
                 margin: EdgeInsets.only(left: 20, right: 10),
                 child: FloatingActionButton(
-                  onPressed: () => {}, // TODO end this
+                  onPressed: () => {_changeGroup(-1)},
                   child: const Icon(Icons.arrow_left),
                 ),
               ),
               Container(
                 margin: EdgeInsets.only(left: 10, right: 50),
                 child: FloatingActionButton(
-                  onPressed: () => {}, // TODO end this
+                  onPressed: () => {_changeGroup(1)},
                   child: const Icon(Icons.arrow_right),
                 ),
               ),
@@ -128,23 +171,23 @@ class _MyHomePageState extends State<PointCounter> {
 }
 
 class GroupPage extends StatefulWidget {
-  const GroupPage({super.key, required this.groupNumber});
+  const GroupPage({super.key, required this.groupNumber, required this.players});
 
   final int groupNumber;
+  final List<Player> players;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
 
 class _GroupPageState extends State<GroupPage> {
-  List<Player> players = List.empty();
   var nameController = TextEditingController();
   var lastNameController = TextEditingController();
 
   void _addPlayer() {
     var name = nameController.text;
     var lname = lastNameController.text;
-    var newPlayer = Player(name: name, lastName: lname);
-    players.add(newPlayer);
+    var newPlayer = Player(name: name, lastName: lname, group: widget.groupNumber);
+    widget.players.add(newPlayer);
     setState(() {});
   }
 
@@ -154,6 +197,12 @@ class _GroupPageState extends State<GroupPage> {
       mainAxisAlignment: MainAxisAlignment.start,
       mainAxisSize: MainAxisSize.max,
       children: [
+        Container(
+          child: Text(
+            "Grupa ${widget.groupNumber}",
+            textScaler: TextScaler.linear(2.0),
+          ),
+        ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.max,
@@ -161,40 +210,44 @@ class _GroupPageState extends State<GroupPage> {
             SizedBox(
               width: 300,
               child: TextFormField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  border: UnderlineInputBorder(),
-                  labelText: 'Podaj nazwisko',
-                )
-              ),
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    border: UnderlineInputBorder(),
+                    labelText: 'Podaj nazwisko',
+                  )),
             ),
             SizedBox(
               width: 300,
               child: TextFormField(
-                controller: lastNameController,
-                decoration: const InputDecoration(
-                  border: UnderlineInputBorder(),
-                  labelText: 'Podaj nazwisko',
-                )
-              ),
+                  controller: lastNameController,
+                  decoration: const InputDecoration(
+                    border: UnderlineInputBorder(),
+                    labelText: 'Podaj nazwisko',
+                  )),
             ),
             FloatingActionButton(
               onPressed: _addPlayer,
               child: Icon(Icons.add),
             ),
+            FloatingActionButton(
+              onPressed: () => {}, // TODO end this
+              child: Icon(Icons.shuffle),
+            )
           ],
         ),
         ListView.builder(
           // Let the ListView know how many items it needs to build.
-          itemCount: players.length,
+          itemCount: widget.players.where((e) => e.group == widget.groupNumber).length,
+          shrinkWrap: true,
           // Provide a builder function. This is where the magic happens.
           // Convert each item into a widget based on the type of item it is.
           itemBuilder: (context, index) {
-            final p = players[index];
+            final p = widget.players.where((e) => e.group == widget.groupNumber).toList()[index];
 
-            return ListTile(
-              leading: Text("Gracz: ${p.name} ${p.lastName}")
-            );
+            return Row(children: [
+              Text("Gracz: ${p.name} ${p.lastName}"),
+              TextButton(onPressed: () => {widget.players.remove(p), setState(() {})}, child: Text("Usuń"))
+            ]);
           },
         ),
       ],
@@ -203,11 +256,19 @@ class _GroupPageState extends State<GroupPage> {
 }
 
 class Player {
-  const Player({required this.name, required this.lastName});
+  Player({required this.name, required this.lastName, this.ifPlaying = false, required this.group});
 
   final String name;
   final String lastName;
+  final int group;
+  bool ifPlaying;
   //final List<GamePlayed> gamesPlayed;
+}
+
+class Table {
+  int tableNumber;
+  bool isFree;
+  Table({required this.tableNumber, this.isFree = false});
 }
 
 // class GamePlayed {
