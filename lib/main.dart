@@ -45,75 +45,96 @@ class PointCounter extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<PointCounter> {
+  int _nextPage = 2;
   int _nextGroup = 1;
-  List<Table> _tables = List.empty(growable: true);
-  List<GroupPage> _groups = List.empty(growable: true);
+  List<Page> _pages = List.empty(growable: true);
   List<Player> _players = List.empty(growable: true);
-  GroupPage? _currentGroup;
+  Page? _currentPage;
+  bool _canModify = true;
 
   final _playerNumberInputController = TextEditingController();
   final _tableCountController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _pages.add(MainPage(pageNumber: 1, setTables: _setTables));
+    _currentPage = _pages[0];
+  }
+
+  @override
   void dispose() {
     // Clean up the controller when the widget is disposed.
     _playerNumberInputController.dispose();
+    _tableCountController.dispose();
     super.dispose();
   }
 
   _createNextGroup() async {
-    if (_tables.isEmpty) {
-      _showTableAlert();
-    }
-
     var group = GroupPage(
       groupNumber: _nextGroup,
-      players: _players,
+      addPlayer: _addPlayer,
+      removePlayer: _removePlayer,
+      getPlayersFromGroup: _getPlayers,
+      pageNumber: _nextPage,
     );
-    _groups.add(group);
-    _currentGroup = group;
+    _pages.add(group);
+    _currentPage = group;
     print("Created new group number $_nextGroup");
-    print("Number of groups: ${_groups.length}");
+    print("Number of groups/pages: ${_pages.length}");
     _nextGroup++;
+    _nextPage++;
     setState(() {});
   }
 
   void _changeGroup(int jump) {
     print("Changing group!");
-    print("Current + jump -> ${_currentGroup?.groupNumber} + ($jump)");
-    var calculatedGroup = (_currentGroup!.groupNumber + jump);
-    print("Calculated group: $calculatedGroup");
-    if (calculatedGroup < 1) {
-      _currentGroup = _groups[0];
+    print("Current + jump -> ${_currentPage?.pageNumber} + ($jump)");
+    var calculatedPage = (_currentPage!.pageNumber + jump);
+    print("Calculated group: $calculatedPage");
+    if (calculatedPage < 1) {
+      _currentPage = _pages[0];
       return;
     }
-    if (calculatedGroup > _groups.length) {
-      _currentGroup = _groups[_groups.length - 1];
+    if (calculatedPage > _pages.length) {
+      _currentPage = _pages[_pages.length - 1];
       return;
     }
-    _currentGroup = _groups[calculatedGroup - 1];
+    _currentPage = _pages[calculatedPage - 1];
     setState(() {});
   }
 
-  Future _showTableAlert() => showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-            title: Text("Ile jest stołów do gry?"),
-            content: TextField(controller: _tableCountController, decoration: const InputDecoration(hintText: "Liczba stołów")),
-            actions: [
-              TextButton(
-                  onPressed: () => {
-                        if (int.tryParse(_tableCountController.text) != null) {_generateTables(), Navigator.of(context).pop()}
-                      },
-                  child: Text("Ok"))
-            ],
-          ));
-  void _generateTables() {
-    var numberOfTables = _tableCountController.text;
-    for (int i = 0; i <= int.parse(numberOfTables); i++) {
-      _tables.add(Table(tableNumber: i));
+  void _addPlayer(Player player) {
+    if (_canModify) {
+      _players.add(player);
     }
-    print("Generated $numberOfTables tables");
+  }
+
+  void _removePlayer(Player player) {
+    if (_canModify) {
+      _players.remove(player);
+    }
+  }
+
+  void _setTables(int numberOfTables) {
+    print("Setting tables...");
+    var tablePage = TablePage(
+      startGame: () => {}, // TODO end this
+      numberOfTables: numberOfTables,
+      getFreePlayers: _getFreePlayers,
+      pageNumber: 1,
+    );
+    _pages[0] = tablePage;
+    _currentPage = tablePage;
+    setState(() {});
+  }
+
+  List<Player> _getFreePlayers() {
+    return _players.where((e) => e.ifPlaying == false).toList();
+  }
+
+  List<Player> _getPlayers(int groupNumber) {
+    return _players.where((e) => e.group == groupNumber).toList();
   }
 
   @override
@@ -121,9 +142,9 @@ class _MyHomePageState extends State<PointCounter> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
+        title: Text("${widget.title} Page ${_currentPage?.pageNumber}/${_pages.length}"),
       ),
-      body: Center(child: Container(margin: EdgeInsets.all(40), child: _currentGroup)),
+      body: Center(child: Container(margin: EdgeInsets.all(40), child: _currentPage)),
       bottomNavigationBar: BottomAppBar(
           shape: const CircularNotchedRectangle(),
           child: Row(
@@ -170,11 +191,60 @@ class _MyHomePageState extends State<PointCounter> {
   }
 }
 
-class GroupPage extends StatefulWidget {
-  const GroupPage({super.key, required this.groupNumber, required this.players});
+abstract class Page extends StatefulWidget {
+  final int pageNumber;
 
+  const Page({super.key, required this.pageNumber});
+}
+
+class MainPage extends Page {
+  MainPage({required this.setTables, required super.pageNumber});
+
+  final Function(int numberOfTables) setTables;
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage> {
+  var _tableInputController = TextEditingController();
+  @override
+  void dispose() {
+    // Clean up the controller when the widget is disposed.
+    _tableInputController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Text("Podaj liczbę stołów do gry"),
+        TextField(
+          controller: _tableInputController,
+          decoration: InputDecoration(labelText: "Liczba stołów"),
+          keyboardType: TextInputType.number,
+          inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly], // Only numbers can be entered
+        ),
+        TextButton(onPressed: sendTableCount, child: Text("Ustaw stoły"))
+      ],
+    );
+  }
+
+  void sendTableCount() {
+    print("Sending number of tables to the main widget. \nnumber of tables: ${_tableInputController.text}");
+    widget.setTables(int.parse(_tableInputController.text));
+  }
+}
+
+class GroupPage extends Page {
+  GroupPage(
+      {required this.groupNumber, required this.addPlayer, required this.getPlayersFromGroup, required this.removePlayer, required super.pageNumber});
   final int groupNumber;
-  final List<Player> players;
+  final Function(Player) addPlayer;
+  final Function(Player) removePlayer;
+  final Function(int) getPlayersFromGroup;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
@@ -187,7 +257,7 @@ class _GroupPageState extends State<GroupPage> {
     var name = nameController.text;
     var lname = lastNameController.text;
     var newPlayer = Player(name: name, lastName: lname, group: widget.groupNumber);
-    widget.players.add(newPlayer);
+    widget.addPlayer(newPlayer);
     setState(() {});
   }
 
@@ -237,19 +307,66 @@ class _GroupPageState extends State<GroupPage> {
         ),
         ListView.builder(
           // Let the ListView know how many items it needs to build.
-          itemCount: widget.players.where((e) => e.group == widget.groupNumber).length,
+          itemCount: widget.getPlayersFromGroup(widget.groupNumber).length,
           shrinkWrap: true,
           // Provide a builder function. This is where the magic happens.
           // Convert each item into a widget based on the type of item it is.
           itemBuilder: (context, index) {
-            final p = widget.players.where((e) => e.group == widget.groupNumber).toList()[index];
+            final p = widget.getPlayersFromGroup(widget.groupNumber)[index];
 
             return Row(children: [
               Text("Gracz: ${p.name} ${p.lastName}"),
-              TextButton(onPressed: () => {widget.players.remove(p), setState(() {})}, child: Text("Usuń"))
+              TextButton(onPressed: () => {widget.removePlayer(p), setState(() {})}, child: Text("Usuń"))
             ]);
           },
         ),
+      ],
+    );
+  }
+}
+
+class TablePage extends Page {
+  final int numberOfTables;
+  final Function() getFreePlayers;
+  final Function() startGame;
+
+  const TablePage({super.key, required this.numberOfTables, required this.getFreePlayers, required this.startGame, required super.pageNumber});
+  @override
+  State<StatefulWidget> createState() => _tablePageState();
+}
+
+class _tablePageState extends State<TablePage> {
+  bool _gameStarted = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.start,
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        TextButton(
+            onPressed: null, // TODO end this
+            child: Text("Start Game")),
+        ListView.builder(
+          itemCount: widget.numberOfTables,
+          shrinkWrap: true,
+          itemBuilder: (context, index) {
+            List<Player> freePlayers = widget.getFreePlayers();
+            Player p1;
+            Player p2;
+            if (freePlayers.length < 2) {
+              return Row(
+                children: [Text("Pusty stół")],
+              );
+            } else {
+              p1 = freePlayers[0];
+              p2 = freePlayers[1];
+            }
+            return Row(children: [
+              Text("Gracz: ${p1.name} ${p1.lastName} vs Gracz ${p2.name} ${p2.lastName}"),
+            ]);
+          },
+        )
       ],
     );
   }
