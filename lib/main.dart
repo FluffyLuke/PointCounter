@@ -50,7 +50,7 @@ class _MyHomePageState extends State<PointCounter> {
   List<Page> _pages = List.empty(growable: true);
   List<Player> _players = List.empty(growable: true);
   Page? _currentPage;
-  bool _canModify = true;
+  Options _options = Options();
 
   final _playerNumberInputController = TextEditingController();
   final _tableCountController = TextEditingController();
@@ -70,13 +70,20 @@ class _MyHomePageState extends State<PointCounter> {
     super.dispose();
   }
 
-  _createNextGroup() async {
+  _createNextGroup() {
+    // Sometimes main widget does not get refreshed when game is starting.
+    // In such case check and refresh.
+    if (_options.gameStarted) {
+      setState(() {});
+      return;
+    }
     var group = GroupPage(
       groupNumber: _nextGroup,
       addPlayer: _addPlayer,
       removePlayer: _removePlayer,
       getPlayersFromGroup: _getPlayers,
       pageNumber: _nextPage,
+      options: _options,
     );
     _pages.add(group);
     _currentPage = group;
@@ -88,10 +95,10 @@ class _MyHomePageState extends State<PointCounter> {
   }
 
   void _changeGroup(int jump) {
-    print("Changing group!");
-    print("Current + jump -> ${_currentPage?.pageNumber} + ($jump)");
+    //print("Changing group!");
+    //print("Current + jump -> ${_currentPage?.pageNumber} + ($jump)");
     var calculatedPage = (_currentPage!.pageNumber + jump);
-    print("Calculated group: $calculatedPage");
+    //print("Calculated group: $calculatedPage");
     if (calculatedPage < 1) {
       _currentPage = _pages[0];
       return;
@@ -105,13 +112,13 @@ class _MyHomePageState extends State<PointCounter> {
   }
 
   void _addPlayer(Player player) {
-    if (_canModify) {
+    if (!_options.gameStarted) {
       _players.add(player);
     }
   }
 
   void _removePlayer(Player player) {
-    if (_canModify) {
+    if (!_options.gameStarted) {
       _players.remove(player);
     }
   }
@@ -119,8 +126,8 @@ class _MyHomePageState extends State<PointCounter> {
   void _setTables(int numberOfTables) {
     print("Setting tables...");
     var tablePage = TablePage(
-      startGame: () => {}, // TODO end this
       numberOfTables: numberOfTables,
+      options: _options,
       getFreePlayers: _getFreePlayers,
       pageNumber: 1,
     );
@@ -130,7 +137,7 @@ class _MyHomePageState extends State<PointCounter> {
   }
 
   List<Player> _getFreePlayers() {
-    return _players.where((e) => e.ifPlaying == false).toList();
+    return _players.where((e) => e.currentGame == null).toList();
   }
 
   List<Player> _getPlayers(int groupNumber) {
@@ -166,7 +173,7 @@ class _MyHomePageState extends State<PointCounter> {
               Container(
                 margin: EdgeInsets.only(left: 50, right: 20),
                 child: FloatingActionButton(
-                  onPressed: _createNextGroup,
+                  onPressed: _options.gameStarted ? null : _createNextGroup,
                   backgroundColor: Color.fromRGBO(0, 0, 0, 1),
                   child: const Icon(
                     Icons.add,
@@ -240,11 +247,17 @@ class _MainPageState extends State<MainPage> {
 
 class GroupPage extends Page {
   GroupPage(
-      {required this.groupNumber, required this.addPlayer, required this.getPlayersFromGroup, required this.removePlayer, required super.pageNumber});
+      {required this.options,
+      required this.groupNumber,
+      required this.addPlayer,
+      required this.getPlayersFromGroup,
+      required this.removePlayer,
+      required super.pageNumber});
   final int groupNumber;
   final Function(Player) addPlayer;
   final Function(Player) removePlayer;
   final Function(int) getPlayersFromGroup;
+  final Options options;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
@@ -296,13 +309,9 @@ class _GroupPageState extends State<GroupPage> {
                   )),
             ),
             FloatingActionButton(
-              onPressed: _addPlayer,
+              onPressed: widget.options.gameStarted ? null : _addPlayer,
               child: Icon(Icons.add),
             ),
-            FloatingActionButton(
-              onPressed: () => {}, // TODO end this
-              child: Icon(Icons.shuffle),
-            )
           ],
         ),
         ListView.builder(
@@ -326,17 +335,105 @@ class _GroupPageState extends State<GroupPage> {
 }
 
 class TablePage extends Page {
-  final int numberOfTables;
   final Function() getFreePlayers;
-  final Function() startGame;
+  final Options options;
+  final List<Table> tables = List.empty(growable: true);
 
-  const TablePage({super.key, required this.numberOfTables, required this.getFreePlayers, required this.startGame, required super.pageNumber});
+  TablePage({super.key, required this.getFreePlayers, required this.options, required super.pageNumber, required int numberOfTables}) {
+    for (int i = 0; i < numberOfTables; i++) {
+      tables.add(Table(tableNumber: i + 1));
+    }
+  }
   @override
   State<StatefulWidget> createState() => _tablePageState();
 }
 
 class _tablePageState extends State<TablePage> {
-  bool _gameStarted = false;
+  @override
+  void initState() {
+    super.initState();
+    _setPlayersGames();
+  }
+
+  var _smallPointsController1 = TextEditingController();
+  var _smallPointsController2 = TextEditingController();
+  var _bigPointsController1 = TextEditingController();
+  var _bigPointsController2 = TextEditingController();
+
+  void _setPlayersGames() {
+    for (Table table in widget.tables) {
+      if (!table.isFree) {
+        continue;
+      }
+      var result = _generateMatchup();
+      if (result == null) {
+        continue;
+      }
+      Player p1 = result.$1;
+      Player p2 = result.$2;
+      table.p1 = p1;
+      table.p2 = p2;
+    }
+    setState(() {});
+  }
+
+  void _addRoundToPlayers(Player p1, Player p2) {
+    if (p1.currentGame == null) {
+      throw Exception("Player1 is not in game");
+    }
+    if (p2.currentGame == null) {
+      throw Exception("Player2 is not in game");
+    }
+    if (p1.currentGame != p2.currentGame) {
+      throw Exception("Players are in two different games");
+    }
+    Round round1 = Round(smallPoints: int.parse(_smallPointsController1.text), bigPoints: int.parse(_bigPointsController1.text));
+    Round round2 = Round(smallPoints: int.parse(_smallPointsController2.text), bigPoints: int.parse(_bigPointsController2.text));
+    p1.currentGame?.addRound(round1, round2);
+    if (p1.currentGame?.checkIfGameOver() != null) {
+      print("Game is over for player ${p1.name} and ${p2.name}");
+      p1.gamesPlayed.add(p1.currentGame!);
+      p1.currentGame = null;
+      p2.gamesPlayed.add(p2.currentGame!);
+      p2.currentGame = null;
+      bool foundPlayerFlag = false;
+      for (Table table in widget.tables) {
+        if (table.p1 == p1 && table.p2 == p2) {
+          foundPlayerFlag = true;
+          table.setFree();
+          break;
+        }
+      }
+      if (!foundPlayerFlag) {
+        throw Exception("Cound not find the table with players");
+      }
+    }
+    print("Added new round to player ${p1.name} and ${p2.name}");
+    _setPlayersGames();
+  }
+
+  (Player p1, Player p2)? _generateMatchup() {
+    List<Player> freePlayers = widget.getFreePlayers();
+    Player p1;
+    Player p2;
+    if (freePlayers.length < 2) {
+      return null;
+    }
+    p1 = freePlayers[0];
+    p2 = freePlayers[1];
+
+    if (p1.currentGame != null) {
+      throw Exception("Player ${p1.name} ${p1.lastName} is free, but is in an active game at the same time");
+    }
+    if (p2.currentGame != null) {
+      throw Exception("Player ${p2.name} ${p2.lastName} is free, but is in an active game at the same time");
+    }
+
+    GamePlayed newGame = GamePlayed(player1: p1, player2: p2);
+    p1.currentGame = newGame;
+    p2.currentGame = newGame;
+    return (p1, p2);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -344,63 +441,200 @@ class _tablePageState extends State<TablePage> {
       mainAxisAlignment: MainAxisAlignment.start,
       mainAxisSize: MainAxisSize.max,
       children: [
-        TextButton(
-            onPressed: null, // TODO end this
-            child: Text("Start Game")),
+        TextButton(onPressed: widget.options.gameStarted ? null : startGame, child: Text("Start Game")),
         ListView.builder(
-          itemCount: widget.numberOfTables,
+          itemCount: widget.tables.length,
           shrinkWrap: true,
           itemBuilder: (context, index) {
-            List<Player> freePlayers = widget.getFreePlayers();
-            Player p1;
-            Player p2;
-            if (freePlayers.length < 2) {
+            var currentTable = widget.tables[index];
+            //print("is table number ${currentTable.tableNumber} free: ${currentTable.isFree}");
+            var emptyTableMessage = "Pusty stół numer ${index + 1}";
+
+            // Check if game has started
+            if (!widget.options.gameStarted) {
               return Row(
-                children: [Text("Pusty stół")],
+                children: [Text(emptyTableMessage)],
               );
-            } else {
-              p1 = freePlayers[0];
-              p2 = freePlayers[1];
             }
+
+            // Check if table is occupied
+            if (!currentTable.isFree) {
+              String? matchup = currentTable.getCurrentMatchup();
+              matchup ??= emptyTableMessage;
+              return Row(
+                children: [Text(matchup)],
+              );
+            }
+
+            String? matchup = currentTable.getCurrentMatchup();
+            matchup ??= emptyTableMessage;
+
             return Row(children: [
-              Text("Gracz: ${p1.name} ${p1.lastName} vs Gracz ${p2.name} ${p2.lastName}"),
+              Text(matchup),
+              TextButton(
+                  onPressed: () => showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          title: Text("Dodaj punkty"),
+                          actions: [
+                            TextButton(
+                                onPressed: () => {Navigator.of(context).pop(), _addRoundToPlayers(currentTable.p1!, currentTable.p2!)},
+                                child: Text("Dodaj punkty"))
+                          ],
+                          content: Row(
+                            children: [
+                              Column(
+                                children: [
+                                  SizedBox(
+                                    height: 300,
+                                    width: 500,
+                                    child: TextFormField(
+                                        controller: _bigPointsController1,
+                                        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                                        decoration: InputDecoration(
+                                          border: UnderlineInputBorder(),
+                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p1?.name} ${currentTable.p1?.lastName}',
+                                        )),
+                                  ),
+                                  SizedBox(
+                                    height: 300,
+                                    width: 500,
+                                    child: TextFormField(
+                                        controller: _smallPointsController1,
+                                        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                                        decoration: InputDecoration(
+                                          border: UnderlineInputBorder(),
+                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p1?.name} ${currentTable.p1?.lastName}',
+                                        )),
+                                  ),
+                                ],
+                              ),
+                              Column(
+                                children: [
+                                  SizedBox(
+                                    height: 300,
+                                    width: 500,
+                                    child: TextFormField(
+                                        controller: _bigPointsController2,
+                                        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                                        decoration: InputDecoration(
+                                          border: UnderlineInputBorder(),
+                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p2?.name} ${currentTable.p2?.lastName}',
+                                        )),
+                                  ),
+                                  SizedBox(
+                                    height: 300,
+                                    width: 500,
+                                    child: TextFormField(
+                                        controller: _smallPointsController2,
+                                        inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
+                                        decoration: InputDecoration(
+                                          border: UnderlineInputBorder(),
+                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p2?.name} ${currentTable.p2?.lastName}',
+                                        )),
+                                  ),
+                                ],
+                              )
+                            ],
+                          ),
+                        );
+                      }),
+                  child: Text("Dodaj punkty"))
             ]);
           },
         )
       ],
     );
   }
+
+  void startGame() {
+    setState(() {
+      widget.options.gameStarted = true;
+    });
+  }
 }
 
 class Player {
-  Player({required this.name, required this.lastName, this.ifPlaying = false, required this.group});
+  Player({required this.name, required this.lastName, required this.group});
 
   final String name;
   final String lastName;
   final int group;
-  bool ifPlaying;
-  //final List<GamePlayed> gamesPlayed;
+  GamePlayed? currentGame;
+  final List<GamePlayed> gamesPlayed = List.empty(growable: true);
 }
 
 class Table {
   int tableNumber;
   bool isFree;
-  Table({required this.tableNumber, this.isFree = false});
+  Player? p1;
+  Player? p2;
+
+  Table({required this.tableNumber, this.isFree = true});
+
+  String? getCurrentMatchup() {
+    if (p1 == null || p2 == null) {
+      return null;
+    }
+    return "${p1?.name} ${p1?.lastName} VS ${p2?.name} ${p2?.lastName}";
+  }
+
+  void setFree() {
+    p1 = null;
+    p2 = null;
+  }
+
+  void setPlayers(Player p1, Player p2) {
+    this.p1 = p1;
+    this.p2 = p2;
+  }
 }
 
-// class GamePlayed {
-//   GamePlayed({required this.player1, required this.player2});
-//   Player player1;
-//   Player player2;
-//   List<(Set, Set)> setsPlayed = List.empty();
+// TODO add players here
+class Options {
+  bool gameStarted;
 
-//   void addSet(Set set) {
-//     if
-//   }
-// }
+  Options({this.gameStarted = false});
+}
 
-// class Set {
-//   Set({required this.smallPoints, required this.bigPoints});
-//   int smallPoints;
-//   int bigPoints;
-// }
+class GamePlayed {
+  GamePlayed({required this.player1, required this.player2});
+  Player player1;
+  Player player2;
+  List<(Round, Round)> roundsPlayed = List.empty(growable: true);
+
+  bool addRound(Round r1, Round r2) {
+    if (roundsPlayed.length >= 3) {
+      return false;
+    }
+    roundsPlayed.add((r1, r2));
+    return true;
+  }
+
+  // If game is won, return player who has won. Of not - return null.
+  Player? checkIfGameOver() {
+    int player1Points = 0;
+    int player2Points = 0;
+    for (var (p1r, p2r) in roundsPlayed) {
+      if (p1r.bigPoints > p2r.bigPoints) {
+        player1Points++;
+      } else {
+        player2Points++;
+      }
+    }
+    if (player1Points == 2) {
+      return player1;
+    }
+    if (player2Points == 2) {
+      return player2;
+    }
+    return null;
+  }
+}
+
+class Round {
+  Round({required this.smallPoints, required this.bigPoints});
+  int smallPoints;
+  int bigPoints;
+}
