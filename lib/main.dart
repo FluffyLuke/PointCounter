@@ -181,17 +181,6 @@ class _MyHomePageState extends State<PointCounter> {
                   ),
                 ),
               ),
-              // SizedBox(
-              //   width: 300,
-              //   child: TextField(
-              //       controller: _playerNumberInputController,
-              //       decoration: InputDecoration(labelText: "Liczba zawodników"),
-              //       keyboardType: TextInputType.number,
-              //       inputFormatters: <TextInputFormatter>[
-              //         FilteringTextInputFormatter.digitsOnly
-              //       ], // Only numbers can be entered
-              //     ),
-              //   )
             ],
           )),
     );
@@ -264,14 +253,56 @@ class GroupPage extends Page {
 
 class _GroupPageState extends State<GroupPage> {
   var nameController = TextEditingController();
-  var lastNameController = TextEditingController();
 
   void _addPlayer() {
     var name = nameController.text;
-    var lname = lastNameController.text;
-    var newPlayer = Player(name: name, lastName: lname, group: widget.groupNumber);
+    var newPlayer = Player(name: name, group: widget.groupNumber, options: widget.options);
     widget.addPlayer(newPlayer);
     setState(() {});
+  }
+
+  void _displayPlayer(Player player) {
+    String isFree = "Tak";
+    if (player.currentGame != null) {
+      isFree = "Nie";
+    }
+    showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: Text(player.name),
+            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: Text("Zamknij"))],
+            content: Column(
+              children: [
+                Text("Imię: ${player.name}", textScaler: TextScaler.linear(2.0)),
+                Text("Czy jest wolny? $isFree"),
+                Text("Walczył przeciwko:", textScaler: TextScaler.linear(2.0)),
+                SizedBox(
+                  width: 1000,
+                  height: 700,
+                  child: Builder(builder: (context) {
+                    if (player.foughtAgainst.isEmpty) {
+                      return Text("Nikt");
+                    }
+                    return ListView.builder(
+                        // Let the ListView know how many items it needs to build.
+                        itemCount: player.foughtAgainst.length,
+                        shrinkWrap: false,
+                        // Provide a builder function. This is where the magic happens.
+                        // Convert each item into a widget based on the type of item it is.
+                        itemBuilder: (context, index) {
+                          final playerFought = player.foughtAgainst[index];
+
+                          return Row(children: [
+                            Text("Gracz: ${playerFought.name}"),
+                          ]);
+                        });
+                  }),
+                ),
+              ],
+            ),
+          );
+        });
   }
 
   @override
@@ -291,21 +322,12 @@ class _GroupPageState extends State<GroupPage> {
           mainAxisSize: MainAxisSize.max,
           children: [
             SizedBox(
-              width: 300,
+              width: 600,
               child: TextFormField(
                   controller: nameController,
                   decoration: const InputDecoration(
                     border: UnderlineInputBorder(),
-                    labelText: 'Podaj nazwisko',
-                  )),
-            ),
-            SizedBox(
-              width: 300,
-              child: TextFormField(
-                  controller: lastNameController,
-                  decoration: const InputDecoration(
-                    border: UnderlineInputBorder(),
-                    labelText: 'Podaj nazwisko',
+                    labelText: 'Podaj imię i nazwisko gracza',
                   )),
             ),
             FloatingActionButton(
@@ -324,7 +346,8 @@ class _GroupPageState extends State<GroupPage> {
             final p = widget.getPlayersFromGroup(widget.groupNumber)[index];
 
             return Row(children: [
-              Text("Gracz: ${p.name} ${p.lastName}"),
+              Text("Gracz: ${p.name}"),
+              TextButton(onPressed: () => _displayPlayer(p), child: Text("Opis")),
               TextButton(onPressed: () => {widget.removePlayer(p), setState(() {})}, child: Text("Usuń"))
             ]);
           },
@@ -352,6 +375,13 @@ class _tablePageState extends State<TablePage> {
   @override
   void initState() {
     super.initState();
+    if (widget.options.gameStarted) {
+      _setPlayersGames();
+    }
+  }
+
+  void _startGame() {
+    widget.options.gameStarted = true;
     _setPlayersGames();
   }
 
@@ -375,6 +405,54 @@ class _tablePageState extends State<TablePage> {
       table.p2 = p2;
     }
     setState(() {});
+  }
+
+  (Player p1, Player p2)? _getNextFreePair(List<Player> players) {
+    for (Player p1 in players) {
+      for (Player p2 in players) {
+        if (p1 == p2) {
+          continue;
+        }
+        if (!p1.canFightAgainst(p2) || !p2.canFightAgainst(p1)) {
+          continue;
+        }
+        return (p1, p2);
+      }
+    }
+    return null;
+  }
+
+  (Player p1, Player p2)? _generateMatchup() {
+    List<Player> freePlayers = widget.getFreePlayers();
+    for (Player p in freePlayers) {
+      print("FREE PLAYERS: ${p.name}");
+    }
+    Player p1;
+    Player p2;
+    if (freePlayers.length < 2) {
+      print("Too few players to start a next match");
+      return null;
+    }
+    var result = _getNextFreePair(freePlayers);
+    if (result == null) {
+      return null;
+    }
+    p1 = result.$1;
+    p2 = result.$2;
+
+    if (p1.currentGame != null) {
+      throw Exception("Player ${p1.name} is free, but is in an active game at the same time");
+    }
+    if (p2.currentGame != null) {
+      throw Exception("Player ${p2.name} is free, but is in an active game at the same time");
+    }
+
+    GamePlayed newGame = GamePlayed(player1: p1, player2: p2);
+    p1.currentGame = newGame;
+    p2.currentGame = newGame;
+    p1.foughtAgainst.add(p2);
+    p2.foughtAgainst.add(p1);
+    return (p1, p2);
   }
 
   void _addRoundToPlayers(Player p1, Player p2) {
@@ -412,36 +490,13 @@ class _tablePageState extends State<TablePage> {
     _setPlayersGames();
   }
 
-  (Player p1, Player p2)? _generateMatchup() {
-    List<Player> freePlayers = widget.getFreePlayers();
-    Player p1;
-    Player p2;
-    if (freePlayers.length < 2) {
-      return null;
-    }
-    p1 = freePlayers[0];
-    p2 = freePlayers[1];
-
-    if (p1.currentGame != null) {
-      throw Exception("Player ${p1.name} ${p1.lastName} is free, but is in an active game at the same time");
-    }
-    if (p2.currentGame != null) {
-      throw Exception("Player ${p2.name} ${p2.lastName} is free, but is in an active game at the same time");
-    }
-
-    GamePlayed newGame = GamePlayed(player1: p1, player2: p2);
-    p1.currentGame = newGame;
-    p2.currentGame = newGame;
-    return (p1, p2);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
       mainAxisSize: MainAxisSize.max,
       children: [
-        TextButton(onPressed: widget.options.gameStarted ? null : startGame, child: Text("Start Game")),
+        TextButton(onPressed: widget.options.gameStarted ? null : _startGame, child: Text("Start Game")),
         ListView.builder(
           itemCount: widget.tables.length,
           shrinkWrap: true,
@@ -457,18 +512,8 @@ class _tablePageState extends State<TablePage> {
               );
             }
 
-            // Check if table is occupied
-            if (!currentTable.isFree) {
-              String? matchup = currentTable.getCurrentMatchup();
-              matchup ??= emptyTableMessage;
-              return Row(
-                children: [Text(matchup)],
-              );
-            }
-
             String? matchup = currentTable.getCurrentMatchup();
             matchup ??= emptyTableMessage;
-
             return Row(children: [
               Text(matchup),
               TextButton(
@@ -494,7 +539,7 @@ class _tablePageState extends State<TablePage> {
                                         inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
                                         decoration: InputDecoration(
                                           border: UnderlineInputBorder(),
-                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p1?.name} ${currentTable.p1?.lastName}',
+                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p1?.name}',
                                         )),
                                   ),
                                   SizedBox(
@@ -505,7 +550,7 @@ class _tablePageState extends State<TablePage> {
                                         inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
                                         decoration: InputDecoration(
                                           border: UnderlineInputBorder(),
-                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p1?.name} ${currentTable.p1?.lastName}',
+                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p1?.name}',
                                         )),
                                   ),
                                 ],
@@ -520,7 +565,7 @@ class _tablePageState extends State<TablePage> {
                                         inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
                                         decoration: InputDecoration(
                                           border: UnderlineInputBorder(),
-                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p2?.name} ${currentTable.p2?.lastName}',
+                                          labelText: 'Podaj duże punkty dla gracza ${currentTable.p2?.name}',
                                         )),
                                   ),
                                   SizedBox(
@@ -531,7 +576,7 @@ class _tablePageState extends State<TablePage> {
                                         inputFormatters: <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly],
                                         decoration: InputDecoration(
                                           border: UnderlineInputBorder(),
-                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p2?.name} ${currentTable.p2?.lastName}',
+                                          labelText: 'Podaj małe punkty dla gracza ${currentTable.p2?.name}',
                                         )),
                                   ),
                                 ],
@@ -547,22 +592,30 @@ class _tablePageState extends State<TablePage> {
       ],
     );
   }
-
-  void startGame() {
-    setState(() {
-      widget.options.gameStarted = true;
-    });
-  }
 }
 
 class Player {
-  Player({required this.name, required this.lastName, required this.group});
+  Player({required this.name, required this.group, required this.options});
 
   final String name;
-  final String lastName;
   final int group;
   GamePlayed? currentGame;
   final List<GamePlayed> gamesPlayed = List.empty(growable: true);
+  final List<Player> foughtAgainst = List.empty(growable: true);
+  final Options options;
+
+  bool canFightAgainst(Player anotherPlayer) {
+    print("$name - ${anotherPlayer.name}");
+    int foughtTimes = foughtAgainst.where(((e) => e == anotherPlayer)).length;
+    if (foughtTimes >= options.remaches) {
+      print("Player $name cannot fight ${anotherPlayer.name}: Fought to many times");
+      return false;
+    }
+    if (group != anotherPlayer.group) {
+      return false;
+    }
+    return true;
+  }
 }
 
 class Table {
@@ -577,7 +630,7 @@ class Table {
     if (p1 == null || p2 == null) {
       return null;
     }
-    return "${p1?.name} ${p1?.lastName} VS ${p2?.name} ${p2?.lastName}";
+    return "${p1?.name} VS ${p2?.name}";
   }
 
   void setFree() {
@@ -594,8 +647,9 @@ class Table {
 // TODO add players here
 class Options {
   bool gameStarted;
+  int remaches;
 
-  Options({this.gameStarted = false});
+  Options({this.remaches = 1, this.gameStarted = false});
 }
 
 class GamePlayed {
