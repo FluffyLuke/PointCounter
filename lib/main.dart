@@ -11,7 +11,6 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -29,26 +28,16 @@ class MyApp extends StatelessWidget {
 class PointCounter extends StatefulWidget {
   const PointCounter({super.key, required this.title});
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
   final String title;
 
   @override
-  State<PointCounter> createState() => _MyHomePageState();
+  State<PointCounter> createState() => _PointCounterState();
 }
 
-class _MyHomePageState extends State<PointCounter> {
+class _PointCounterState extends State<PointCounter> {
   int _nextPage = 2;
   int _nextGroup = 1;
   List<Page> _pages = List.empty(growable: true);
-  List<Player> _players = List.empty(growable: true);
   Page? _currentPage;
   Options _options = Options();
 
@@ -79,9 +68,6 @@ class _MyHomePageState extends State<PointCounter> {
     }
     var group = GroupPage(
       groupNumber: _nextGroup,
-      addPlayer: _addPlayer,
-      removePlayer: _removePlayer,
-      getPlayersFromGroup: _getPlayers,
       pageNumber: _nextPage,
       options: _options,
     );
@@ -111,37 +97,16 @@ class _MyHomePageState extends State<PointCounter> {
     setState(() {});
   }
 
-  void _addPlayer(Player player) {
-    if (!_options.gameStarted) {
-      _players.add(player);
-    }
-  }
-
-  void _removePlayer(Player player) {
-    if (!_options.gameStarted) {
-      _players.remove(player);
-    }
-  }
-
   void _setTables(int numberOfTables) {
     print("Setting tables...");
     var tablePage = TablePage(
       numberOfTables: numberOfTables,
       options: _options,
-      getFreePlayers: _getFreePlayers,
       pageNumber: 1,
     );
     _pages[0] = tablePage;
     _currentPage = tablePage;
     setState(() {});
-  }
-
-  List<Player> _getFreePlayers() {
-    return _players.where((e) => e.currentGame == null).toList();
-  }
-
-  List<Player> _getPlayers(int groupNumber) {
-    return _players.where((e) => e.group == groupNumber).toList();
   }
 
   @override
@@ -235,17 +200,8 @@ class _MainPageState extends State<MainPage> {
 }
 
 class GroupPage extends Page {
-  GroupPage(
-      {required this.options,
-      required this.groupNumber,
-      required this.addPlayer,
-      required this.getPlayersFromGroup,
-      required this.removePlayer,
-      required super.pageNumber});
+  GroupPage({required this.options, required this.groupNumber, required super.pageNumber});
   final int groupNumber;
-  final Function(Player) addPlayer;
-  final Function(Player) removePlayer;
-  final Function(int) getPlayersFromGroup;
   final Options options;
   @override
   State<GroupPage> createState() => _GroupPageState();
@@ -257,7 +213,7 @@ class _GroupPageState extends State<GroupPage> {
   void _addPlayer() {
     var name = nameController.text;
     var newPlayer = Player(name: name, group: widget.groupNumber, options: widget.options);
-    widget.addPlayer(newPlayer);
+    widget.options.addPlayer(newPlayer);
     setState(() {});
   }
 
@@ -338,17 +294,17 @@ class _GroupPageState extends State<GroupPage> {
         ),
         ListView.builder(
           // Let the ListView know how many items it needs to build.
-          itemCount: widget.getPlayersFromGroup(widget.groupNumber).length,
+          itemCount: widget.options.getPlayers(widget.groupNumber).length,
           shrinkWrap: true,
           // Provide a builder function. This is where the magic happens.
           // Convert each item into a widget based on the type of item it is.
           itemBuilder: (context, index) {
-            final p = widget.getPlayersFromGroup(widget.groupNumber)[index];
+            final p = widget.options.getPlayers(widget.groupNumber)[index];
 
             return Row(children: [
               Text("Gracz: ${p.name}"),
               TextButton(onPressed: () => _displayPlayer(p), child: Text("Opis")),
-              TextButton(onPressed: () => {widget.removePlayer(p), setState(() {})}, child: Text("Usuń"))
+              TextButton(onPressed: () => {widget.options.removePlayer(p), setState(() {})}, child: Text("Usuń"))
             ]);
           },
         ),
@@ -358,11 +314,10 @@ class _GroupPageState extends State<GroupPage> {
 }
 
 class TablePage extends Page {
-  final Function() getFreePlayers;
   final Options options;
   final List<Table> tables = List.empty(growable: true);
 
-  TablePage({super.key, required this.getFreePlayers, required this.options, required super.pageNumber, required int numberOfTables}) {
+  TablePage({super.key, required this.options, required super.pageNumber, required int numberOfTables}) {
     for (int i = 0; i < numberOfTables; i++) {
       tables.add(Table(tableNumber: i + 1));
     }
@@ -423,7 +378,7 @@ class _tablePageState extends State<TablePage> {
   }
 
   (Player p1, Player p2)? _generateMatchup() {
-    List<Player> freePlayers = widget.getFreePlayers();
+    List<Player> freePlayers = widget.options.getFreePlayers();
     for (Player p in freePlayers) {
       print("FREE PLAYERS: ${p.name}");
     }
@@ -648,8 +603,33 @@ class Table {
 class Options {
   bool gameStarted;
   int remaches;
+  List<Player> players = List.empty(growable: true);
 
   Options({this.remaches = 1, this.gameStarted = false});
+
+  void addPlayer(Player player) {
+    if (!gameStarted) {
+      players.add(player);
+    }
+  }
+
+  void removePlayer(Player player) {
+    if (gameStarted) {
+      players.remove(player);
+    }
+  }
+
+  List<Player> getFreePlayers() {
+    return players.where((e) => e.currentGame == null).toList();
+  }
+
+  List<Player> getPlayers(int groupNumber) {
+    return players.where((e) => e.group == groupNumber).toList();
+  }
+
+  List<Player> getAllPlayers() {
+    return players;
+  }
 }
 
 class GamePlayed {
