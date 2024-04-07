@@ -237,20 +237,19 @@ class _GroupPageState extends State<GroupPage> {
                   width: 1000,
                   height: 700,
                   child: Builder(builder: (context) {
-                    if (player.foughtAgainst.isEmpty) {
-                      return Text("Nikt");
-                    }
                     return ListView.builder(
                         // Let the ListView know how many items it needs to build.
-                        itemCount: player.foughtAgainst.length,
+                        itemCount: player.gamesToPlay.length,
                         shrinkWrap: false,
                         // Provide a builder function. This is where the magic happens.
                         // Convert each item into a widget based on the type of item it is.
                         itemBuilder: (context, index) {
-                          final playerFought = player.foughtAgainst[index];
+                          final gameToPlay = player.gamesToPlay[index];
 
                           return Row(children: [
-                            Text("Gracz: ${playerFought.name}"),
+                            Text("Gracz1: ${gameToPlay.player1.name}"),
+                            Text("Gracz2: ${gameToPlay.player2.name}"),
+                            Text("Czy skończona: ${gameToPlay.isOver}")
                           ]);
                         });
                   }),
@@ -337,6 +336,7 @@ class _tablePageState extends State<TablePage> {
 
   void _startGame() {
     widget.options.gameStarted = true;
+    widget.options.generateMatchupsForPlayers();
     _setPlayersGames();
   }
 
@@ -350,64 +350,32 @@ class _tablePageState extends State<TablePage> {
       if (!table.isFree) {
         continue;
       }
-      var result = _generateMatchup();
-      if (result == null) {
-        continue;
+
+      for (Player p in widget.options.getFreePlayers()) {
+        if (p.currentGame != null) {
+          continue;
+        }
+        var nextMatchup = p.getNextMatchup();
+        if (nextMatchup == null) {
+          continue;
+        }
+
+        //print(
+        //    "------\nPlayer 1 ${nextMatchup.player1.name} Player 2 ${nextMatchup.player2.name}\n${nextMatchup.player1.currentGame} ${nextMatchup.player2.currentGame}");
+        if (nextMatchup.player1.currentGame != null || nextMatchup.player2.currentGame != null) {
+          continue;
+        }
+        Player p1 = nextMatchup.player1;
+        p1.currentGame = nextMatchup;
+        Player p2 = nextMatchup.player2;
+        p2.currentGame = nextMatchup;
+        table.p1 = p1;
+        table.p2 = p2;
+        table.isFree = false;
+        break;
       }
-      Player p1 = result.$1;
-      Player p2 = result.$2;
-      table.p1 = p1;
-      table.p2 = p2;
     }
     setState(() {});
-  }
-
-  (Player p1, Player p2)? _getNextFreePair(List<Player> players) {
-    for (Player p1 in players) {
-      for (Player p2 in players) {
-        if (p1 == p2) {
-          continue;
-        }
-        if (!p1.canFightAgainst(p2) || !p2.canFightAgainst(p1)) {
-          continue;
-        }
-        return (p1, p2);
-      }
-    }
-    return null;
-  }
-
-  (Player p1, Player p2)? _generateMatchup() {
-    List<Player> freePlayers = widget.options.getFreePlayers();
-    for (Player p in freePlayers) {
-      print("FREE PLAYERS: ${p.name}");
-    }
-    Player p1;
-    Player p2;
-    if (freePlayers.length < 2) {
-      print("Too few players to start a next match");
-      return null;
-    }
-    var result = _getNextFreePair(freePlayers);
-    if (result == null) {
-      return null;
-    }
-    p1 = result.$1;
-    p2 = result.$2;
-
-    if (p1.currentGame != null) {
-      throw Exception("Player ${p1.name} is free, but is in an active game at the same time");
-    }
-    if (p2.currentGame != null) {
-      throw Exception("Player ${p2.name} is free, but is in an active game at the same time");
-    }
-
-    GamePlayed newGame = GamePlayed(player1: p1, player2: p2);
-    p1.currentGame = newGame;
-    p2.currentGame = newGame;
-    p1.foughtAgainst.add(p2);
-    p2.foughtAgainst.add(p1);
-    return (p1, p2);
   }
 
   void _addRoundToPlayers(Player p1, Player p2) {
@@ -422,13 +390,9 @@ class _tablePageState extends State<TablePage> {
     }
     Round round1 = Round(smallPoints: int.parse(_smallPointsController1.text), bigPoints: int.parse(_bigPointsController1.text));
     Round round2 = Round(smallPoints: int.parse(_smallPointsController2.text), bigPoints: int.parse(_bigPointsController2.text));
-    p1.currentGame?.addRound(round1, round2);
-    if (p1.currentGame?.checkIfGameOver() != null) {
-      print("Game is over for player ${p1.name} and ${p2.name}");
-      p1.gamesPlayed.add(p1.currentGame!);
-      p1.currentGame = null;
-      p2.gamesPlayed.add(p2.currentGame!);
-      p2.currentGame = null;
+    p1.currentGame!.addRound(round1, round2);
+    //print("Game is over for player ${p1.name} and ${p2.name}");
+    if (p1.currentGame!.isOver) {
       bool foundPlayerFlag = false;
       for (Table table in widget.tables) {
         if (table.p1 == p1 && table.p2 == p2) {
@@ -440,6 +404,8 @@ class _tablePageState extends State<TablePage> {
       if (!foundPlayerFlag) {
         throw Exception("Cound not find the table with players");
       }
+      p1.currentGame = null;
+      p2.currentGame = null;
     }
     print("Added new round to player ${p1.name} and ${p2.name}");
     _setPlayersGames();
@@ -549,30 +515,6 @@ class _tablePageState extends State<TablePage> {
   }
 }
 
-class Player {
-  Player({required this.name, required this.group, required this.options});
-
-  final String name;
-  final int group;
-  GamePlayed? currentGame;
-  final List<GamePlayed> gamesPlayed = List.empty(growable: true);
-  final List<Player> foughtAgainst = List.empty(growable: true);
-  final Options options;
-
-  bool canFightAgainst(Player anotherPlayer) {
-    print("$name - ${anotherPlayer.name}");
-    int foughtTimes = foughtAgainst.where(((e) => e == anotherPlayer)).length;
-    if (foughtTimes >= options.remaches) {
-      print("Player $name cannot fight ${anotherPlayer.name}: Fought to many times");
-      return false;
-    }
-    if (group != anotherPlayer.group) {
-      return false;
-    }
-    return true;
-  }
-}
-
 class Table {
   int tableNumber;
   bool isFree;
@@ -591,6 +533,7 @@ class Table {
   void setFree() {
     p1 = null;
     p2 = null;
+    isFree = true;
   }
 
   void setPlayers(Player p1, Player p2) {
@@ -607,6 +550,13 @@ class Options {
 
   Options({this.remaches = 1, this.gameStarted = false});
 
+  void generateMatchupsForPlayers() {
+    for (Player p in players) {
+      List<Player> playersFromGroup = players.where((e) => e.group == p.group).toList();
+      p.generateMatchups(playersFromGroup);
+    }
+  }
+
   void addPlayer(Player player) {
     if (!gameStarted) {
       players.add(player);
@@ -614,7 +564,7 @@ class Options {
   }
 
   void removePlayer(Player player) {
-    if (gameStarted) {
+    if (!gameStarted) {
       players.remove(player);
     }
   }
@@ -632,22 +582,87 @@ class Options {
   }
 }
 
-class GamePlayed {
-  GamePlayed({required this.player1, required this.player2});
+class Player {
+  Player({required this.name, required this.group, required this.options});
+
+  final String name;
+  final int group;
+  GameToPlay? currentGame;
+  final List<GameToPlay> gamesToPlay = List.empty(growable: true);
+  final Options options;
+
+  bool canFightAgainst(Player anotherPlayer) {
+    //print("$name - ${anotherPlayer.name}");
+    if (group != anotherPlayer.group) {
+      return false;
+    }
+    int foughtTimes = 0;
+    for (GameToPlay game in gamesToPlay) {
+      if (game.player1 == anotherPlayer || game.player2 == anotherPlayer) {
+        foughtTimes++;
+      }
+    }
+    if (foughtTimes >= options.remaches) {
+      //print("Player $name cannot fight ${anotherPlayer.name}: Fought to many times");
+      return false;
+    }
+    return true;
+  }
+
+  bool isAlreadyFightingWith(Player p) {
+    for (GameToPlay game in gamesToPlay) {
+      if (game.player1 == p || game.player2 == p) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void generateMatchups(List<Player> playersFromGroup) {
+    for (Player anotherPlayer in playersFromGroup) {
+      if (anotherPlayer == this) {
+        continue;
+      }
+      if (isAlreadyFightingWith(anotherPlayer)) {
+        continue;
+      }
+      for (int i = 0; i < options.remaches; i++) {
+        GameToPlay g = GameToPlay(player1: this, player2: anotherPlayer);
+        gamesToPlay.add(g);
+        anotherPlayer.gamesToPlay.add(g);
+      }
+    }
+  }
+
+  GameToPlay? getNextMatchup() {
+    return gamesToPlay.where((e) => (e.isOver == false) && (e.player1.currentGame == null && e.player2.currentGame == null)).firstOrNull;
+  }
+}
+
+class GameToPlay {
+  GameToPlay({required this.player1, required this.player2});
   Player player1;
   Player player2;
+  bool isOver = false;
   List<(Round, Round)> roundsPlayed = List.empty(growable: true);
 
   bool addRound(Round r1, Round r2) {
+    if (isOver) {
+      return false;
+    }
     if (roundsPlayed.length >= 3) {
+      isOver = true;
       return false;
     }
     roundsPlayed.add((r1, r2));
+    if (checkWhoWon() != null) {
+      isOver = true;
+    }
     return true;
   }
 
   // If game is won, return player who has won. Of not - return null.
-  Player? checkIfGameOver() {
+  Player? checkWhoWon() {
     int player1Points = 0;
     int player2Points = 0;
     for (var (p1r, p2r) in roundsPlayed) {
