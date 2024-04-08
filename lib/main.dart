@@ -1,11 +1,24 @@
+import 'dart:convert';
+import 'package:json_annotation/json_annotation.dart';
+import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
-import 'package:popover/popover.dart';
 
-void main() {
-  runApp(const MyApp());
+part 'main.g.dart';
+
+void main(List<String> args) {
+  print(args.firstOrNull);
+  if (args.firstOrNull == 'multi_window') {
+    final windowId = int.parse(args[1]);
+    final argument = args[2].isEmpty ? const {} : jsonDecode(args[2]) as Map<String, dynamic>;
+    runApp(SubApp(
+      windowController: WindowController.fromWindowId(windowId),
+      args: argument,
+    ));
+  } else {
+    runApp(const MyApp());
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -109,6 +122,27 @@ class _PointCounterState extends State<PointCounter> {
     setState(() {});
   }
 
+  void _displayScoreWindow() async {
+    // final window = await DesktopMultiWindow.createWindow(jsonEncode({'arg1': 'Sub Window'})).then((value) {
+    //   value
+    //     ..setFrame(const Offset(0, 0) & const Size(1200, 1000))
+    //     ..center()
+    //     ..setTitle("Wyniki")
+    //     ..show();
+    //});
+    final window = await DesktopMultiWindow.createWindow(jsonEncode({
+      'args1': 'sub',
+      'args2': 100,
+      'args3': true,
+      'bussiness': 'bussiness_test',
+    }));
+    window
+      ..setFrame(const Offset(0, 0) & const Size(1280, 720))
+      ..center()
+      ..setTitle('Another window')
+      ..show();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -146,6 +180,13 @@ class _PointCounterState extends State<PointCounter> {
                   ),
                 ),
               ),
+              Container(
+                margin: EdgeInsets.only(left: 20),
+                child: FloatingActionButton(
+                  onPressed: _displayScoreWindow,
+                  child: const Icon(Icons.score),
+                ),
+              )
             ],
           )),
     );
@@ -323,6 +364,18 @@ class TablePage extends Page {
   }
   @override
   State<StatefulWidget> createState() => _tablePageState();
+}
+
+class ScorePage extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() => _scorePageState();
+}
+
+class _scorePageState extends State<ScorePage> {
+  @override
+  Widget build(BuildContext context) {
+    return Text("DUpson");
+  }
 }
 
 class _tablePageState extends State<TablePage> {
@@ -515,6 +568,7 @@ class _tablePageState extends State<TablePage> {
   }
 }
 
+@JsonSerializable()
 class Table {
   int tableNumber;
   bool isFree;
@@ -522,6 +576,11 @@ class Table {
   Player? p2;
 
   Table({required this.tableNumber, this.isFree = true});
+
+  factory Table.fromJson(Map<String, dynamic> json) => _$TableFromJson(json);
+
+  /// Connect the generated [_$PersonToJson] function to the `toJson` method.
+  Map<String, dynamic> toJson() => _$TableToJson(this);
 
   String? getCurrentMatchup() {
     if (p1 == null || p2 == null) {
@@ -542,13 +601,18 @@ class Table {
   }
 }
 
-// TODO add players here
+@JsonSerializable()
 class Options {
   bool gameStarted;
   int remaches;
   List<Player> players = List.empty(growable: true);
 
   Options({this.remaches = 1, this.gameStarted = false});
+
+  factory Options.fromJson(Map<String, dynamic> json) => _$OptionsFromJson(json);
+
+  /// Connect the generated [_$PersonToJson] function to the `toJson` method.
+  Map<String, dynamic> toJson() => _$OptionsToJson(this);
 
   void generateMatchupsForPlayers() {
     for (Player p in players) {
@@ -582,6 +646,7 @@ class Options {
   }
 }
 
+@JsonSerializable()
 class Player {
   Player({required this.name, required this.group, required this.options});
 
@@ -590,6 +655,13 @@ class Player {
   GameToPlay? currentGame;
   final List<GameToPlay> gamesToPlay = List.empty(growable: true);
   final Options options;
+
+  /// Connect the generated [_$PersonFromJson] function to the `fromJson`
+  /// factory.
+  factory Player.fromJson(Map<String, dynamic> json) => _$PlayerFromJson(json);
+
+  /// Connect the generated [_$PersonToJson] function to the `toJson` method.
+  Map<String, dynamic> toJson() => _$PlayerToJson(this);
 
   bool canFightAgainst(Player anotherPlayer) {
     //print("$name - ${anotherPlayer.name}");
@@ -639,12 +711,18 @@ class Player {
   }
 }
 
+@JsonSerializable()
 class GameToPlay {
   GameToPlay({required this.player1, required this.player2});
   Player player1;
   Player player2;
   bool isOver = false;
   List<(Round, Round)> roundsPlayed = List.empty(growable: true);
+
+  factory GameToPlay.fromJson(Map<String, dynamic> json) => _$GameToPlayFromJson(json);
+
+  /// Connect the generated [_$PersonToJson] function to the `toJson` method.
+  Map<String, dynamic> toJson() => _$GameToPlayToJson(this);
 
   bool addRound(Round r1, Round r2) {
     if (isOver) {
@@ -682,8 +760,54 @@ class GameToPlay {
   }
 }
 
+@JsonSerializable()
 class Round {
   Round({required this.smallPoints, required this.bigPoints});
   int smallPoints;
   int bigPoints;
+
+  factory Round.fromJson(Map<String, dynamic> json) => _$RoundFromJson(json);
+
+  /// Connect the generated [_$PersonToJson] function to the `toJson` method.
+  Map<String, dynamic> toJson() => _$RoundToJson(this);
+}
+
+class SubApp extends StatefulWidget {
+  const SubApp({
+    super.key,
+    required this.windowController,
+    required this.args,
+  });
+
+  final WindowController windowController;
+  final Map? args;
+  @override
+  State<StatefulWidget> createState() => _SubAppState();
+}
+
+class _SubAppState extends State<SubApp> {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+        title: "Sub window",
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.red),
+          useMaterial3: true,
+        ),
+        home: Scaffold(
+          appBar: AppBar(
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          ),
+          body: Text("SUPER"),
+          bottomNavigationBar: BottomAppBar(
+              shape: const CircularNotchedRectangle(),
+              child: Row(
+                children: [
+                  Text("21"),
+                  Text("2"),
+                ],
+              )),
+        ));
+  }
 }
