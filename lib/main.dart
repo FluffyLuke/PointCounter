@@ -130,6 +130,10 @@ class _PointCounterState extends State<PointCounter> {
     //     ..setTitle("Wyniki")
     //     ..show();
     //});
+    if (_options.secondWindowId != null) {
+      print("Trying to create a second window, but one is already present");
+      return;
+    }
     final window = await DesktopMultiWindow.createWindow(jsonEncode({
       'args1': 'sub',
       'args2': 100,
@@ -141,6 +145,8 @@ class _PointCounterState extends State<PointCounter> {
       ..center()
       ..setTitle('Another window')
       ..show();
+    _options.addSecondWindowId(window.windowId);
+    _options.updateSecondWindow();
   }
 
   @override
@@ -355,30 +361,29 @@ class _GroupPageState extends State<GroupPage> {
 
 class TablePage extends Page {
   final Options options;
-  final List<Table> tables = List.empty(growable: true);
 
   TablePage({super.key, required this.options, required super.pageNumber, required int numberOfTables}) {
     for (int i = 0; i < numberOfTables; i++) {
-      tables.add(Table(tableNumber: i + 1));
+      options.tables.add(Table(tableNumber: i + 1));
     }
   }
   @override
-  State<StatefulWidget> createState() => _tablePageState();
+  State<StatefulWidget> createState() => _TablePageState();
 }
 
 class ScorePage extends StatefulWidget {
   @override
-  State<StatefulWidget> createState() => _scorePageState();
+  State<StatefulWidget> createState() => _ScorePageState();
 }
 
-class _scorePageState extends State<ScorePage> {
+class _ScorePageState extends State<ScorePage> {
   @override
   Widget build(BuildContext context) {
     return Text("DUpson");
   }
 }
 
-class _tablePageState extends State<TablePage> {
+class _TablePageState extends State<TablePage> {
   @override
   void initState() {
     super.initState();
@@ -399,7 +404,7 @@ class _tablePageState extends State<TablePage> {
   var _bigPointsController2 = TextEditingController();
 
   void _setPlayersGames() {
-    for (Table table in widget.tables) {
+    for (Table table in widget.options.tables) {
       if (!table.isFree) {
         continue;
       }
@@ -447,7 +452,7 @@ class _tablePageState extends State<TablePage> {
     //print("Game is over for player ${p1.name} and ${p2.name}");
     if (p1.currentGame!.isOver) {
       bool foundPlayerFlag = false;
-      for (Table table in widget.tables) {
+      for (Table table in widget.options.tables) {
         if (table.p1 == p1 && table.p2 == p2) {
           foundPlayerFlag = true;
           table.setFree();
@@ -460,6 +465,7 @@ class _tablePageState extends State<TablePage> {
       p1.currentGame = null;
       p2.currentGame = null;
     }
+    widget.options.updateSecondWindow();
     print("Added new round to player ${p1.name} and ${p2.name}");
     _setPlayersGames();
   }
@@ -472,10 +478,10 @@ class _tablePageState extends State<TablePage> {
       children: [
         TextButton(onPressed: widget.options.gameStarted ? null : _startGame, child: Text("Start Game")),
         ListView.builder(
-          itemCount: widget.tables.length,
+          itemCount: widget.options.tables.length,
           shrinkWrap: true,
           itemBuilder: (context, index) {
-            var currentTable = widget.tables[index];
+            var currentTable = widget.options.tables[index];
             //print("is table number ${currentTable.tableNumber} free: ${currentTable.isFree}");
             var emptyTableMessage = "Pusty stół numer ${index + 1}";
 
@@ -599,15 +605,55 @@ class Table {
     this.p1 = p1;
     this.p2 = p2;
   }
+
+  (String, String, String) getWeak() {
+    final player1 = p1 == null ? "Nikt" : p1!.name;
+    final player2 = p2 == null ? "Nikt" : p2!.name;
+    return ("Stół nr $tableNumber", player1, player2);
+  }
 }
 
 @JsonSerializable()
 class Options {
   bool gameStarted;
   int remaches;
+  int? secondWindowId;
+  List<Table> tables = List.empty(growable: true);
   List<Player> players = List.empty(growable: true);
 
   Options({this.remaches = 1, this.gameStarted = false});
+
+  void updateSecondWindow() {
+    if (secondWindowId == null) {
+      return;
+    }
+
+    final weakTables = [];
+    for (Table table in tables) {
+      var wt = table.getWeak();
+      weakTables.add([wt.$1, wt.$2, wt.$3]);
+    }
+
+    final weakPlayers = [];
+    for (Player p in players) {
+      var weakPlayer = [p.name];
+      var numberOfWonSets = 0;
+      for (var element in p.gamesToPlay) {
+        var ifWon = element.checkWhoWon();
+        if (ifWon == null || ifWon != p) {
+          continue;
+        }
+        numberOfWonSets++;
+      }
+      weakPlayer.add(numberOfWonSets.toString());
+      for (var element in p.gamesToPlay) {
+        weakPlayer.add("${element.player1} VS ${element.player2}");
+      }
+      weakPlayers.add(weakPlayer);
+    }
+
+    DesktopMultiWindow.invokeMethod(secondWindowId!, "update", jsonEncode(this.toJson()));
+  }
 
   factory Options.fromJson(Map<String, dynamic> json) => _$OptionsFromJson(json);
 
@@ -631,6 +677,10 @@ class Options {
     if (!gameStarted) {
       players.remove(player);
     }
+  }
+
+  void addSecondWindowId(int id) {
+    secondWindowId = id;
   }
 
   List<Player> getFreePlayers() {
@@ -781,11 +831,25 @@ class SubApp extends StatefulWidget {
 
   final WindowController windowController;
   final Map? args;
+
   @override
   State<StatefulWidget> createState() => _SubAppState();
 }
 
 class _SubAppState extends State<SubApp> {
+  Future<dynamic> _handleMethodCallback(MethodCall call, int fromWindowID) async {
+    if (call.method.toString() == "update") {
+      Options options = Options.fromJson(jsonDecode(call.arguments));
+      print(options.toString());
+    }
+  }
+
+  @override
+  void initState() {
+    DesktopMultiWindow.setMethodHandler(_handleMethodCallback);
+    super.initState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -804,8 +868,12 @@ class _SubAppState extends State<SubApp> {
               shape: const CircularNotchedRectangle(),
               child: Row(
                 children: [
-                  Text("21"),
-                  Text("2"),
+                  TextButton(
+                    onPressed: () async {
+                      widget.windowController.close();
+                    },
+                    child: const Text('Zamknij'),
+                  ),
                 ],
               )),
         ));

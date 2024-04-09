@@ -10,30 +10,27 @@ Table _$TableFromJson(Map<String, dynamic> json) => Table(
       tableNumber: json['tableNumber'] as int,
       isFree: json['isFree'] as bool? ?? true,
     )
-      ..p1 = json['p1'] == null
-          ? null
-          : Player.fromJson(json['p1'] as Map<String, dynamic>)
-      ..p2 = json['p2'] == null
-          ? null
-          : Player.fromJson(json['p2'] as Map<String, dynamic>);
+      ..p1 = json['p1'] == null ? null : Player.fromJson(json['p1'] as Map<String, dynamic>)
+      ..p2 = json['p2'] == null ? null : Player.fromJson(json['p2'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$TableToJson(Table instance) => <String, dynamic>{
       'tableNumber': instance.tableNumber,
       'isFree': instance.isFree,
-      'p1': instance.p1,
-      'p2': instance.p2,
+      'p1': instance.p1?.toJson(),
+      'p2': instance.p2?.toJson(),
     };
 
 Options _$OptionsFromJson(Map<String, dynamic> json) => Options(
       remaches: json['remaches'] as int? ?? 1,
       gameStarted: json['gameStarted'] as bool? ?? false,
-    )..players = (json['players'] as List<dynamic>)
-        .map((e) => Player.fromJson(e as Map<String, dynamic>))
-        .toList();
+    )
+      ..secondWindowId = json['secondWindowId'] as int?
+      ..players = (json['players'] as List<dynamic>).map((e) => Player.fromJson(e as Map<String, dynamic>)).toList();
 
 Map<String, dynamic> _$OptionsToJson(Options instance) => <String, dynamic>{
       'gameStarted': instance.gameStarted,
       'remaches': instance.remaches,
+      'secondWindowId': instance.secondWindowId,
       'players': instance.players,
     };
 
@@ -41,9 +38,7 @@ Player _$PlayerFromJson(Map<String, dynamic> json) => Player(
       name: json['name'] as String,
       group: json['group'] as int,
       options: Options.fromJson(json['options'] as Map<String, dynamic>),
-    )..currentGame = json['currentGame'] == null
-        ? null
-        : GameToPlay.fromJson(json['currentGame'] as Map<String, dynamic>);
+    )..currentGame = json['currentGame'] == null ? null : GameToPlay.fromJson(json['currentGame'] as Map<String, dynamic>);
 
 Map<String, dynamic> _$PlayerToJson(Player instance) => <String, dynamic>{
       'name': instance.name,
@@ -67,15 +62,14 @@ GameToPlay _$GameToPlayFromJson(Map<String, dynamic> json) => GameToPlay(
               ))
           .toList();
 
-Map<String, dynamic> _$GameToPlayToJson(GameToPlay instance) =>
-    <String, dynamic>{
-      'player1': instance.player1,
-      'player2': instance.player2,
+Map<String, dynamic> _$GameToPlayToJson(GameToPlay instance) => <String, dynamic>{
+      'player1': instance.player1.toJson(),
+      'player2': instance.player2.toJson(),
       'isOver': instance.isOver,
       'roundsPlayed': instance.roundsPlayed
           .map((e) => {
-                r'$1': e.$1,
-                r'$2': e.$2,
+                r'$1': e.$1.toJson(),
+                r'$2': e.$2.toJson(),
               })
           .toList(),
     };
