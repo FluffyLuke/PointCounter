@@ -585,6 +585,12 @@ class Table {
 
   factory Table.fromJson(Map<String, dynamic> json) => _$TableFromJson(json);
 
+  List<String> serializeTable() {
+    final player1 = p1 == null ? "Nikt" : p1!.name;
+    final player2 = p2 == null ? "Nikt" : p2!.name;
+    return ["$tableNumber", player1, player2];
+  }
+
   /// Connect the generated [_$PersonToJson] function to the `toJson` method.
   Map<String, dynamic> toJson() => _$TableToJson(this);
 
@@ -605,12 +611,14 @@ class Table {
     this.p1 = p1;
     this.p2 = p2;
   }
+}
 
-  (String, String, String) getWeak() {
-    final player1 = p1 == null ? "Nikt" : p1!.name;
-    final player2 = p2 == null ? "Nikt" : p2!.name;
-    return ("Stół nr $tableNumber", player1, player2);
-  }
+class WeakTable {
+  int tableNumber;
+  String p1;
+  String p2;
+
+  WeakTable({required this.tableNumber, required this.p1, required this.p2});
 }
 
 @JsonSerializable()
@@ -628,31 +636,21 @@ class Options {
       return;
     }
 
-    final weakTables = [];
+    List<String> serializedTables = [];
+    serializedTables.add(tables.length.toString());
     for (Table table in tables) {
-      var wt = table.getWeak();
-      weakTables.add([wt.$1, wt.$2, wt.$3]);
+      var st = table.serializeTable();
+      serializedTables += st;
     }
 
-    final weakPlayers = [];
-    for (Player p in players) {
-      var weakPlayer = [p.name];
-      var numberOfWonSets = 0;
-      for (var element in p.gamesToPlay) {
-        var ifWon = element.checkWhoWon();
-        if (ifWon == null || ifWon != p) {
-          continue;
-        }
-        numberOfWonSets++;
-      }
-      weakPlayer.add(numberOfWonSets.toString());
-      for (var element in p.gamesToPlay) {
-        weakPlayer.add("${element.player1} VS ${element.player2}");
-      }
-      weakPlayers.add(weakPlayer);
+    List<String> serializedPlayers = [];
+    serializedPlayers.add(players.length.toString());
+    for (Player player in players) {
+      var sp = player.serializePlayer();
+      serializedTables += sp;
     }
 
-    DesktopMultiWindow.invokeMethod(secondWindowId!, "update", jsonEncode(this.toJson()));
+    DesktopMultiWindow.invokeMethod(secondWindowId!, "update", serializedTables + serializedPlayers);
   }
 
   factory Options.fromJson(Map<String, dynamic> json) => _$OptionsFromJson(json);
@@ -713,6 +711,22 @@ class Player {
   /// Connect the generated [_$PersonToJson] function to the `toJson` method.
   Map<String, dynamic> toJson() => _$PlayerToJson(this);
 
+  List<String> serializePlayer() {
+    List<String> fields = List.empty(growable: true);
+    fields.add((2 + gamesToPlay.length).toString());
+    fields.add(name);
+    fields.add(group.toString());
+    for (GameToPlay game in gamesToPlay) {
+      if (!game.isOver) {
+        fields.add("${game.player1.name} VS ${game.player2.name} => Nie rozegrane");
+      } else {
+        fields.add("${game.player1.name} VS ${game.player2.name} => ${game.getBigPoints().$1} : ${game.getBigPoints().$1}");
+      }
+    }
+
+    return fields;
+  }
+
   bool canFightAgainst(Player anotherPlayer) {
     //print("$name - ${anotherPlayer.name}");
     if (group != anotherPlayer.group) {
@@ -761,6 +775,13 @@ class Player {
   }
 }
 
+class WeakPlayer {
+  String name;
+  int group;
+  List<String> gamesToPlay;
+  WeakPlayer({required this.name, required this.group, required this.gamesToPlay});
+}
+
 @JsonSerializable()
 class GameToPlay {
   GameToPlay({required this.player1, required this.player2});
@@ -773,6 +794,19 @@ class GameToPlay {
 
   /// Connect the generated [_$PersonToJson] function to the `toJson` method.
   Map<String, dynamic> toJson() => _$GameToPlayToJson(this);
+
+  (int, int) getBigPoints() {
+    int player1Points = 0;
+    int player2Points = 0;
+    for (var (p1r, p2r) in roundsPlayed) {
+      if (p1r.bigPoints > p2r.bigPoints) {
+        player1Points++;
+      } else {
+        player2Points++;
+      }
+    }
+    return (player1Points, player2Points);
+  }
 
   bool addRound(Round r1, Round r2) {
     if (isOver) {
@@ -837,11 +871,65 @@ class SubApp extends StatefulWidget {
 }
 
 class _SubAppState extends State<SubApp> {
+  List<WeakPlayer> weakPlayers = List.empty(growable: true);
+  List<WeakTable> weakTables = List.empty(growable: true);
+
   Future<dynamic> _handleMethodCallback(MethodCall call, int fromWindowID) async {
     if (call.method.toString() == "update") {
-      Options options = Options.fromJson(jsonDecode(call.arguments));
-      print(options.toString());
+      List<Object?> args = call.arguments as List<Object?>;
+      List<String> parsedArgs = List.empty(growable: true);
+      //print(args.length);
+      for (Object? s in args) {
+        parsedArgs.add(s as String);
+        print(s as String);
+      }
+      getGameState(parsedArgs);
     }
+  }
+
+  void getGameState(List<String> args) {
+    List<WeakPlayer> newWeakPlayers = List.empty(growable: true);
+    List<WeakTable> newWeakTables = List.empty(growable: true);
+
+    int numberOfTables;
+    int sizeOfTable = 3;
+    int numberOfPlayers;
+
+    print("a");
+    numberOfTables = int.parse(args[0]);
+    print("a");
+    numberOfPlayers = int.parse(args[numberOfTables * sizeOfTable + 1]);
+    print("a");
+
+    int index = 1; // Start after first argument containing number of tables;
+    while (index < 1 + numberOfTables * sizeOfTable) {
+      print("INDEX: $index");
+      var tableFields = args.sublist(index, index + sizeOfTable);
+      newWeakTables.add(WeakTable(tableNumber: int.parse(tableFields[0]), p1: tableFields[1], p2: tableFields[2]));
+      index += sizeOfTable;
+    }
+
+    for (WeakTable t in newWeakTables) {
+      print("WEAK TABLE : ${t.tableNumber}, ${t.p1}, ${t.p2}");
+    }
+
+    while (index < args.length - 1) {
+      print("INDEX: $index");
+      int sizeOfPlayer = int.parse(args[index]);
+      index++;
+      var playerFields = args.sublist(index, index + sizeOfPlayer);
+      newWeakPlayers.add(WeakPlayer(name: playerFields[0], group: int.parse(args[1]), gamesToPlay: playerFields.sublist(2)));
+      index += sizeOfPlayer;
+    }
+    for (WeakPlayer p in newWeakPlayers) {
+      print("WEAK PLAYER : ${p.name}, ${p.group}");
+      for (var g in p.gamesToPlay) {
+        print(g);
+      }
+    }
+    weakPlayers = newWeakPlayers;
+    weakTables = newWeakTables;
+    setState(() {});
   }
 
   @override
