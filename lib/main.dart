@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:json_annotation/json_annotation.dart';
 import 'package:desktop_multi_window/desktop_multi_window.dart';
 import 'package:flutter/cupertino.dart';
@@ -720,7 +722,8 @@ class Player {
       if (!game.isOver) {
         fields.add("${game.player1.name} VS ${game.player2.name} => Nie rozegrane");
       } else {
-        fields.add("${game.player1.name} VS ${game.player2.name} => ${game.getBigPoints().$1} : ${game.getBigPoints().$1}");
+        print("${game.player1.name} VS ${game.player2.name} => Nie rozegrane");
+        fields.add("${game.player1.name} VS ${game.player2.name} => ${game.getBigPoints().$1} : ${game.getBigPoints().$2}");
       }
     }
 
@@ -873,6 +876,24 @@ class SubApp extends StatefulWidget {
 class _SubAppState extends State<SubApp> {
   List<WeakPlayer> weakPlayers = List.empty(growable: true);
   List<WeakTable> weakTables = List.empty(growable: true);
+  int lastGroup = 0;
+  int currentGroup = 0;
+  static const int groupChangeInterval = 5;
+
+  @override
+  void initState() {
+    currentGroup = 1;
+    Timer.periodic(const Duration(seconds: groupChangeInterval), (timer) {
+      if ((currentGroup + 1) > lastGroup) {
+        currentGroup = 1;
+      } else {
+        currentGroup++;
+      }
+      setState(() {});
+    });
+    DesktopMultiWindow.setMethodHandler(_handleMethodCallback);
+    super.initState();
+  }
 
   Future<dynamic> _handleMethodCallback(MethodCall call, int fromWindowID) async {
     if (call.method.toString() == "update") {
@@ -881,7 +902,7 @@ class _SubAppState extends State<SubApp> {
       //print(args.length);
       for (Object? s in args) {
         parsedArgs.add(s as String);
-        print(s as String);
+        //print(s as String);
       }
       getGameState(parsedArgs);
     }
@@ -893,49 +914,50 @@ class _SubAppState extends State<SubApp> {
 
     int numberOfTables;
     int sizeOfTable = 3;
-    int numberOfPlayers;
+    //int numberOfPlayers;
 
-    print("a");
     numberOfTables = int.parse(args[0]);
-    print("a");
-    numberOfPlayers = int.parse(args[numberOfTables * sizeOfTable + 1]);
-    print("a");
+    //numberOfPlayers = int.parse(args[numberOfTables * sizeOfTable + 1]);
 
     int index = 1; // Start after first argument containing number of tables;
     while (index < 1 + numberOfTables * sizeOfTable) {
-      print("INDEX: $index");
       var tableFields = args.sublist(index, index + sizeOfTable);
       newWeakTables.add(WeakTable(tableNumber: int.parse(tableFields[0]), p1: tableFields[1], p2: tableFields[2]));
       index += sizeOfTable;
     }
 
-    for (WeakTable t in newWeakTables) {
-      print("WEAK TABLE : ${t.tableNumber}, ${t.p1}, ${t.p2}");
-    }
+    // for (WeakTable t in newWeakTables) {
+    //   print("WEAK TABLE : ${t.tableNumber}, ${t.p1}, ${t.p2}");
+    // }
 
     while (index < args.length - 1) {
-      print("INDEX: $index");
+      //print("INDEX: $index");
       int sizeOfPlayer = int.parse(args[index]);
       index++;
       var playerFields = args.sublist(index, index + sizeOfPlayer);
-      newWeakPlayers.add(WeakPlayer(name: playerFields[0], group: int.parse(args[1]), gamesToPlay: playerFields.sublist(2)));
+      if (lastGroup < int.parse(playerFields[1])) {
+        lastGroup = int.parse(playerFields[1]);
+      }
+      newWeakPlayers.add(WeakPlayer(name: playerFields[0], group: int.parse(playerFields[1]), gamesToPlay: playerFields.sublist(2)));
       index += sizeOfPlayer;
     }
-    for (WeakPlayer p in newWeakPlayers) {
-      print("WEAK PLAYER : ${p.name}, ${p.group}");
-      for (var g in p.gamesToPlay) {
-        print(g);
-      }
-    }
+    // for (WeakPlayer p in newWeakPlayers) {
+    //   print("WEAK PLAYER : ${p.name}, ${p.group}");
+    //   for (var g in p.gamesToPlay) {
+    //     print(g);
+    //   }
+    // }
     weakPlayers = newWeakPlayers;
     weakTables = newWeakTables;
     setState(() {});
   }
 
-  @override
-  void initState() {
-    DesktopMultiWindow.setMethodHandler(_handleMethodCallback);
-    super.initState();
+  int getCurrentGroupSize() {
+    return weakPlayers.where((element) => element.group == currentGroup).length;
+  }
+
+  List<WeakPlayer> getCurrentGroup() {
+    return weakPlayers.where((element) => element.group == currentGroup).toList();
   }
 
   @override
@@ -949,9 +971,82 @@ class _SubAppState extends State<SubApp> {
         ),
         home: Scaffold(
           appBar: AppBar(
+            title: Text(
+              "Tablica wyników",
+              textScaler: TextScaler.linear(2),
+            ),
             backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           ),
-          body: Text("SUPER"),
+          body: Row(
+            children: [
+              SizedBox(
+                  width: MediaQuery.of(context).size.width / 2,
+                  height: MediaQuery.of(context).size.height - 300,
+                  child: Builder(builder: (context) {
+                    return ListView.builder(
+                        itemCount: weakTables.length,
+                        shrinkWrap: false,
+                        itemBuilder: (context, index) {
+                          final table = weakTables[index];
+
+                          return Container(
+                            margin: EdgeInsets.all(5),
+                            child: Column(
+                              children: [
+                                Text(
+                                  "Stół nr ${table.tableNumber}",
+                                  textScaler: TextScaler.linear(1.5),
+                                ),
+                                Text(
+                                  "${table.p1} VS ${table.p2}",
+                                  textScaler: TextScaler.linear(1.5),
+                                )
+                              ],
+                            ),
+                          );
+                        });
+                  })),
+              Column(
+                children: [
+                  Container(margin: EdgeInsets.all(10), child: Text("Grupa $currentGroup", textScaler: TextScaler.linear(2))),
+                  SizedBox(
+                      width: MediaQuery.of(context).size.width / 2,
+                      height: MediaQuery.of(context).size.height - 300,
+                      child: Builder(builder: (context) {
+                        return ListView.builder(
+                            itemCount: getCurrentGroupSize(),
+                            shrinkWrap: false,
+                            itemBuilder: (context, index) {
+                              final player = getCurrentGroup()[index];
+                              String games = "";
+                              int switcher = 0;
+                              for (String g in player.gamesToPlay) {
+                                if (switcher == 0 || switcher == 1) {
+                                  games += "$g   |   ";
+                                  switcher++;
+                                  continue;
+                                }
+                                games += "$g\n";
+                                switcher = 0;
+                              }
+                              return Column(
+                                children: [
+                                  Text(
+                                    "Gracz ${player.name}",
+                                    textScaler: TextScaler.linear(2),
+                                  ),
+                                  Text(
+                                    games,
+                                    textScaler: TextScaler.linear(1.2),
+                                  ),
+                                ],
+                              );
+                            });
+                      })),
+                ],
+              ),
+            ],
+          ),
           bottomNavigationBar: BottomAppBar(
               shape: const CircularNotchedRectangle(),
               child: Row(
